@@ -2,6 +2,7 @@
 
 > **Context:** Network security toolkit built from scratch in pure Python stdlib — a raw TCP proxy with hexdump traffic inspection and an SSL/TLS-aware client. Developed to understand low-level socket communication, protocol analysis, and traffic interception without relying on third-party libraries.
 
+## `Developed by: HKK`
 ---
 
 ## `$ cat ./objective.txt`
@@ -134,7 +135,7 @@ receive_first=False:  Proxy espera o cliente falar primeiro (ex: HTTP)
 1. Recebe dados do cliente local
 2. hexdump() + request_handler()
 3. Envia ao servidor remoto
-4. Recebe resposta do servidor remoto     ← estava faltando na versão original
+4. Recebe resposta do servidor remoto
 5. hexdump() + response_handler()
 6. Repassa ao cliente local
 7. Se ambos os lados sem dados → fecha conexões
@@ -170,58 +171,6 @@ s_sock.send(b"GET / HTTP/1.1\r\nHost: ...\r\n\r\n")    # HTTP manual
 ```
 
 Isso permite testar serviços não-HTTP na porta 443, enviar payloads arbitrários (fuzzing, protocol testing), e desenvolver clientes para protocolos proprietários.
-
----
-
-## `$ diff ./original ./fixed`
-
-Bugs identificados e corrigidos:
-
-```diff
-Proxy_TCP.py
-
-- import socketserver                     # import não utilizado, removido
-+ # (removido)
-
-- if len(sys.args[1:]) != 5:             # BUG: sys.args não existe → AttributeError
-+ if len(sys.argv[1:]) != 5:             # FIX: sys.argv
-
-- remote_buffer = response_handler(...)  # BUG: UnboundLocalError se receive_first=False
-+ remote_buffer = b""                    # FIX: inicializar antes do bloco condicional
-
-  while True:
-      local_buffer = receive_from(client_socket)
-      ...
-      remote_socket.send(local_buffer)
--     # BUG: nunca lê a resposta do remote dentro do loop
--     # remote_buffer ficava com valor da iteração anterior, proxy não repassava respostas
-+     remote_buffer = receive_from(remote_socket)   # FIX: receber e repassar a resposta
-+     if len(remote_buffer):
-+         client_socket.send(remote_buffer)
-
--     if not len(local_buffer) or not len(remote_buffer):  # BUG: 'or' fecha precocemente
-+     if not len(local_buffer) and not len(remote_buffer): # FIX: 'and' — fecha só quando ambos vazios
-
-- receive_first = sys.argv[5].strip().lower() in ["true"]  # forma frágil
-+ receive_first = sys.argv[5].strip().lower() == "true"    # comparação explícita
-
-────────────────────────────────────────────────────────
-
-Cliente_TCP.py
-
-- context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)  # BUG: deprecated + nunca utilizado
-- s_sock = ssl.create_default_context().wrap_socket(...)  # criava contexto descartável
-+ context = ssl.create_default_context()         # FIX: um único contexto moderno (TLS 1.2+)
-+ s_sock = context.wrap_socket(s, server_hostname=target_host)
-
-- s_sock.send(b"GET / http/1.1/r/nHost: DOMAIN-TARGET/r/n/r/n")
-+ s_sock.send(                                   # FIX: \r\n real (CRLF conforme RFC 7230)
-+     f"GET / HTTP/1.1\r\n"                      # FIX: HTTP/1.1 maiúsculo
-+     f"Host: {target_host}\r\n"                 # FIX: usar variável, não string hardcoded
-+     f"Connection: close\r\n\r\n"
-+     .encode()
-+ )
-```
 
 ---
 
